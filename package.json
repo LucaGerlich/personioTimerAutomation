@@ -1,0 +1,26 @@
+{
+	"name": "personio-auto-timer",
+	"version": "1.0.0",
+	"description": "Dockerized Playwright automation service to start Personio time-tracking via authenticated HTTP trigger",
+	"type": "module",
+	"scripts": {
+		"start": "tsx src/server.ts",
+		"login": "tsx src/login.ts",
+		"start-timer": "tsx src/cli.ts"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"private": true,
+	"dependencies": {
+		"dotenv": "^16.5.0",
+		"express": "^5.1.0",
+		"playwright": "^1.52.0"
+	},
+	"devDependencies": {
+		"@types/express": "^5.0.2",
+		"@types/node": "^22.15.17",
+		"tsx": "^4.19.4",
+		"typescript": "^5.8.3"
+	}
+}

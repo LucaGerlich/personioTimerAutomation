@@ -1,0 +1,32 @@
+services:
+  personio-timer:
+    build: .
+    container_name: personio-timer
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+      # Uncomment for manual login (remote debugging):
+      # - "9222:9222"
+    volumes:
+      - ./storage:/app/storage
+    env_file:
+      - .env
+    environment:
+      - STORAGE_PATH=/app/storage
+
+    # --- Caddy reverse proxy integration ---
+    # To use with an external Caddy network:
+    # 1. Create the network: docker network create caddy_net
+    # 2. Uncomment the lines below
+    # 3. Remove the "ports" section above (Caddy handles external access)
+    # 4. Add this to your Caddyfile:
+    #    timer.yourdomain.com {
+    #        reverse_proxy personio-timer:3000
+    #    }
+    #
+    # networks:
+    #   - caddy_net
+
+# networks:
+#   caddy_net:
+#     external: true
