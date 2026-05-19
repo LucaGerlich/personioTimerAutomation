@@ -1,34 +1,36 @@
-import type { AppConfig } from './types.ts'
+import type { AppConfig, PersonioAction } from './types.ts'
 
-/** Tracks the last successful trigger timestamp (in-memory, resets on restart) */
-let lastTriggerTime: Date | null = null
+/** Tracks the last successful trigger timestamp per action (in-memory, resets on restart) */
+const lastTriggerTimes = new Map<PersonioAction, Date>()
 
 /**
- * Returns whether enough time has passed since the last successful trigger.
+ * Returns whether enough time has passed since the last successful trigger for the given action.
  */
-export function canTrigger(config: AppConfig): boolean {
-	if (!lastTriggerTime) return true
-	const elapsedMs = Date.now() - lastTriggerTime.getTime()
+export function canTrigger(config: AppConfig, action: PersonioAction): boolean {
+	const lastTime = lastTriggerTimes.get(action)
+	if (!lastTime) return true
+	const elapsedMs = Date.now() - lastTime.getTime()
 	const cooldownMs = config.cooldownMinutes * 60 * 1000
 	return elapsedMs >= cooldownMs
 }
 
 /**
- * Returns how many minutes remain until the cooldown expires.
+ * Returns how many minutes remain until the cooldown expires for the given action.
  */
-export function cooldownRemainingMinutes(config: AppConfig): number {
-	if (!lastTriggerTime) return 0
-	const elapsedMs = Date.now() - lastTriggerTime.getTime()
+export function cooldownRemainingMinutes(config: AppConfig, action: PersonioAction): number {
+	const lastTime = lastTriggerTimes.get(action)
+	if (!lastTime) return 0
+	const elapsedMs = Date.now() - lastTime.getTime()
 	const cooldownMs = config.cooldownMinutes * 60 * 1000
 	const remainingMs = cooldownMs - elapsedMs
 	return Math.max(0, Math.ceil(remainingMs / 60_000))
 }
 
 /**
- * Records the current time as the last successful trigger.
+ * Records the current time as the last successful trigger for the given action.
  */
-export function recordTrigger(): void {
-	lastTriggerTime = new Date()
+export function recordTrigger(action: PersonioAction): void {
+	lastTriggerTimes.set(action, new Date())
 }
 
 /**
@@ -79,20 +81,33 @@ export function isWithinTimeWindow(config: AppConfig): boolean {
 }
 
 /**
+ * Returns true if the current hour falls within the break window.
+ */
+export function isWithinBreakWindow(config: AppConfig): boolean {
+	const { hour } = getLocalTime(config.timezone)
+	return hour >= config.breakStartHour && hour < config.breakEndHour
+}
+
+/**
  * Returns a human-readable summary of the current time guards state.
  */
 export function getGuardStatus(config: AppConfig): {
 	weekday: boolean
 	withinWindow: boolean
-	cooldownClear: boolean
+	cooldowns: Record<PersonioAction, boolean>
 	localTime: string
 } {
 	const { hour, dayOfWeek } = getLocalTime(config.timezone)
 	const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+	const actions: PersonioAction[] = ['start', 'break', 'resume', 'stop']
+	const cooldowns = Object.fromEntries(
+		actions.map((a) => [a, canTrigger(config, a)])
+	) as Record<PersonioAction, boolean>
+
 	return {
 		weekday: dayOfWeek >= 1 && dayOfWeek <= 5,
 		withinWindow: hour >= config.allowedStartHour && hour < config.allowedEndHour,
-		cooldownClear: canTrigger(config),
+		cooldowns,
 		localTime: `${days[dayOfWeek]} ${hour}:xx (${config.timezone})`,
 	}
 }

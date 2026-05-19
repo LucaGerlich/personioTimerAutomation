@@ -78,22 +78,21 @@ docker compose build
 docker compose up -d
 ```
 
-### 3. First Login (Manual)
+### 3. First Login
 
-Before the automation can work, you need to complete the initial login manually. This saves the session cookies to the persistent browser profile.
+Before the automation can work, you need to complete the initial login. The interactive login script runs the browser headlessly and handles the email/password flow automatically.
 
 ```bash
-# Expose the debugging port
-docker compose run --service-ports -p 9222:9222 personio-timer npm run login
+docker compose run -it personio-timer npm run login
 ```
 
-Then:
-1. Open Chrome/Edge on your computer
-2. Go to `chrome://inspect`
-3. Click "Configure..." and add `YOUR_VPS_IP:9222`
-4. Click "inspect" on the listed page
-5. Complete the login process (email, password, SSO, MFA)
-6. Once logged in, press `Ctrl+C` in the terminal to save and exit
+The script will:
+1. Navigate to Personio
+2. Enter your email and password from `.env`
+3. Prompt you for an MFA code if needed (check screenshots in `./storage/screenshots/`)
+4. Save the session to the persistent browser profile
+
+Screenshots are saved at each step to `./storage/screenshots/` so you can see what the browser sees.
 
 The session is now saved in `./storage/personio-browser-profile/` and will persist across container restarts.
 
@@ -199,7 +198,7 @@ Also update `openTimeTracking()` if the direct URL approach doesn't work for you
 | Command | Description |
 |---------|-------------|
 | `npm start` | Start the API server |
-| `npm run login` | Open browser for manual login |
+| `npm run login` | Interactive login (saves session) |
 | `npm run start-timer` | Test automation directly |
 
 In Docker:
@@ -207,7 +206,7 @@ In Docker:
 docker compose up -d                    # Start server
 docker compose logs -f                  # View logs
 docker compose exec personio-timer npm run start-timer  # Test automation
-docker compose run --service-ports -p 9222:9222 personio-timer npm run login  # Manual login
+docker compose run -it personio-timer npm run login  # Manual login
 ```
 
 ## API Reference
@@ -253,7 +252,7 @@ Response statuses:
 
 Run the manual login again:
 ```bash
-docker compose run --service-ports -p 9222:9222 personio-timer npm run login
+docker compose run -it personio-timer npm run login
 ```
 
 ### MFA required
@@ -271,7 +270,7 @@ If your company uses MFA/2FA, you may need to complete manual login periodically
 Delete the profile and re-login:
 ```bash
 rm -rf ./storage/personio-browser-profile
-docker compose run --service-ports -p 9222:9222 personio-timer npm run login
+docker compose run -it personio-timer npm run login
 ```
 
 ## Security Warnings

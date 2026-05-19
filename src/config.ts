@@ -35,6 +35,8 @@ export function loadConfig(): AppConfig {
 	const cooldownMinutes = parseInt(optionalEnv('COOLDOWN_MINUTES', '15'), 10)
 	const allowedStartHour = parseInt(optionalEnv('ALLOWED_START_HOUR', '5'), 10)
 	const allowedEndHour = parseInt(optionalEnv('ALLOWED_END_HOUR', '12'), 10)
+	const breakStartHour = parseInt(optionalEnv('BREAK_START_HOUR', '12'), 10)
+	const breakEndHour = parseInt(optionalEnv('BREAK_END_HOUR', '14'), 10)
 	const headless = optionalEnv('HEADLESS', 'true') === 'true'
 	const timezone = optionalEnv('TIMEZONE', 'Europe/Berlin')
 
@@ -52,6 +54,8 @@ export function loadConfig(): AppConfig {
 		cooldownMinutes,
 		allowedStartHour,
 		allowedEndHour,
+		breakStartHour,
+		breakEndHour,
 		timezone,
 		storagePath,
 		browserProfilePath,

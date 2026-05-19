@@ -1,6 +1,6 @@
 import { chromium, type BrowserContext, type Page } from 'playwright'
 import { mkdirSync } from 'node:fs'
-import type { AppConfig, TriggerStatus } from './types.ts'
+import type { AppConfig, PersonioAction, TriggerStatus } from './types.ts'
 
 // ============================================================================
 // SELECTOR CONFIGURATION
@@ -17,16 +17,101 @@ const SELECTORS = {
 
 	// --- Timer controls ---
 	startTimerButton: 'Arbeitsbeginn erfassen',
-	// When the timer is running, the button text changes to end/pause work
-	timerRunningIndicator: /Arbeitsende erfassen|Pause/i,
-
-	// --- Login state detection ---
-	// The start-timer button itself is a reliable logged-in indicator
-	loggedInIndicator: /Arbeitsbeginn erfassen|Arbeitsende erfassen|Pause/i,
+	stopTimerButton: 'Arbeitsende erfassen',
+	breakButton: 'Pause machen',
+	resumeButton: 'Weiterarbeiten',
 
 	// --- MFA/2FA detection ---
 	mfaIndicator: /two.factor|2fa|mfa|verification\s*code|bestätigungscode|authenticator/i,
 } as const
+
+/**
+ * Action definitions: maps each action to its button, pre-condition, and result statuses.
+ */
+interface ActionDef {
+	buttonSelector: string
+	successStatus: TriggerStatus
+	alreadyDoneStatus: TriggerStatus
+	/** Returns true if the action was already performed (e.g., timer already running) */
+	isAlreadyDone: (page: Page) => Promise<boolean>
+	/** Returns true if the action succeeded after clicking */
+	verifySuccess: (page: Page) => Promise<boolean>
+}
+
+function getActionDef(action: PersonioAction): ActionDef {
+	switch (action) {
+		case 'start':
+			return {
+				buttonSelector: SELECTORS.startTimerButton,
+				successStatus: 'started',
+				alreadyDoneStatus: 'already_started',
+				isAlreadyDone: async (page) => {
+					// If start button is NOT visible but stop/break IS → already started
+					const startVisible = await page.getByRole('button', { name: SELECTORS.startTimerButton })
+						.isVisible().catch(() => false)
+					if (startVisible) return false
+					const stopVisible = await page.getByRole('button', { name: SELECTORS.stopTimerButton })
+						.isVisible().catch(() => false)
+					const breakVisible = await page.getByRole('button', { name: SELECTORS.breakButton })
+						.isVisible().catch(() => false)
+					return stopVisible || breakVisible
+				},
+				verifySuccess: async (page) => {
+					const startGone = !(await page.getByRole('button', { name: SELECTORS.startTimerButton })
+						.isVisible().catch(() => false))
+					return startGone
+				},
+			}
+		case 'break':
+			return {
+				buttonSelector: SELECTORS.breakButton,
+				successStatus: 'break_started',
+				alreadyDoneStatus: 'already_on_break',
+				isAlreadyDone: async (page) => {
+					// If resume button is visible → already on break
+					return page.getByRole('button', { name: SELECTORS.resumeButton })
+						.isVisible().catch(() => false)
+				},
+				verifySuccess: async (page) => {
+					// Resume button should appear after starting break
+					return page.getByRole('button', { name: SELECTORS.resumeButton })
+						.isVisible().catch(() => false)
+				},
+			}
+		case 'resume':
+			return {
+				buttonSelector: SELECTORS.resumeButton,
+				successStatus: 'resumed',
+				alreadyDoneStatus: 'already_working',
+				isAlreadyDone: async (page) => {
+					// If break button is visible → already working (not on break)
+					return page.getByRole('button', { name: SELECTORS.breakButton })
+						.isVisible().catch(() => false)
+				},
+				verifySuccess: async (page) => {
+					// Break button should reappear after resuming
+					return page.getByRole('button', { name: SELECTORS.breakButton })
+						.isVisible().catch(() => false)
+				},
+			}
+		case 'stop':
+			return {
+				buttonSelector: SELECTORS.stopTimerButton,
+				successStatus: 'stopped',
+				alreadyDoneStatus: 'already_stopped',
+				isAlreadyDone: async (page) => {
+					// If start button is visible → already stopped (timer not running)
+					return page.getByRole('button', { name: SELECTORS.startTimerButton })
+						.isVisible().catch(() => false)
+				},
+				verifySuccess: async (page) => {
+					// Start button should reappear after stopping
+					return page.getByRole('button', { name: SELECTORS.startTimerButton })
+						.isVisible().catch(() => false)
+				},
+			}
+	}
+}
 
 /**
  * Launches a persistent Chromium browser context.
@@ -52,41 +137,14 @@ export async function launchBrowser(config: AppConfig): Promise<BrowserContext> 
 }
 
 /**
- * Launches a browser context with remote debugging enabled for manual login.
- * Connect from your browser at http://HOST:9222 to interact with the Chromium instance.
- */
-export async function launchBrowserForLogin(config: AppConfig): Promise<BrowserContext> {
-	mkdirSync(config.browserProfilePath, { recursive: true })
-
-	const context = await chromium.launchPersistentContext(config.browserProfilePath, {
-		headless: false,
-		args: [
-			'--no-sandbox',
-			'--disable-setuid-sandbox',
-			'--disable-dev-shm-usage',
-			'--remote-debugging-port=9222',
-			'--remote-debugging-address=0.0.0.0',
-		],
-		viewport: { width: 1280, height: 720 },
-		locale: 'de-DE',
-		timezoneId: config.timezone,
-	})
-
-	return context
-}
-
-/**
  * Checks whether the user is currently logged in to Personio.
- * Uses the presence of the timer button (start or stop) as the indicator.
+ * Detects login by the ABSENCE of the login form — if the email field
+ * isn't visible, we're authenticated.
  */
 async function isLoggedIn(page: Page): Promise<boolean> {
-	try {
-		const indicator = page.getByRole('button', { name: SELECTORS.loggedInIndicator })
-		await indicator.waitFor({ timeout: 5000, state: 'visible' })
-		return true
-	} catch {
-		return false
-	}
+	const emailField = page.getByRole('textbox', { name: 'E-Mail-Adresse' })
+	const loginFormVisible = await emailField.isVisible().catch(() => false)
+	return !loginFormVisible
 }
 
 /**
@@ -106,8 +164,6 @@ async function isMfaRequired(page: Page): Promise<boolean> {
  * Logs in to Personio using the two-step flow:
  *   1. Enter email → click "Fortfahren"
  *   2. Enter password → click "Fortfahren"
- *
- * If MFA is detected at any point, throws with instructions for manual login.
  */
 export async function loginIfNeeded(page: Page, config: AppConfig): Promise<void> {
 	console.log('[personio] Navigating to Personio...')
@@ -121,24 +177,18 @@ export async function loginIfNeeded(page: Page, config: AppConfig): Promise<void
 
 	console.log('[personio] Not logged in. Attempting login...')
 
-	// Check for MFA before attempting credentials
 	if (await isMfaRequired(page)) {
-		throw new Error(
-			'MFA/2FA detected. Please complete login manually using: npm run login'
-		)
+		throw new Error('MFA/2FA detected. Please complete login manually using: npm run login')
 	}
 
-	// Step 1: Enter email and continue
 	const emailField = page.getByRole('textbox', { name: SELECTORS.emailInput })
 	await emailField.waitFor({ timeout: 10000, state: 'visible' })
 	await emailField.click()
 	await emailField.fill(config.personioEmail)
 
-	const continueBtn = page.getByRole('button', { name: SELECTORS.continueButton })
-	await continueBtn.click()
+	await page.getByRole('button', { name: SELECTORS.continueButton }).click()
 	console.log('[personio] Email entered, continuing...')
 
-	// Step 2: Enter password and continue
 	const passwordField = page.getByRole('textbox', { name: SELECTORS.passwordInput })
 	await passwordField.waitFor({ timeout: 10000, state: 'visible' })
 	await passwordField.click()
@@ -147,15 +197,11 @@ export async function loginIfNeeded(page: Page, config: AppConfig): Promise<void
 	await page.getByRole('button', { name: SELECTORS.continueButton }).click()
 	console.log('[personio] Password entered, logging in...')
 
-	// Wait for post-login navigation
 	await page.waitForLoadState('domcontentloaded')
 	await page.waitForTimeout(5000)
 
-	// Check for MFA after submitting credentials
 	if (await isMfaRequired(page)) {
-		throw new Error(
-			'MFA/2FA required after login. Please complete login manually using: npm run login'
-		)
+		throw new Error('MFA/2FA required after login. Please complete login manually using: npm run login')
 	}
 
 	if (!(await isLoggedIn(page))) {
@@ -166,82 +212,23 @@ export async function loginIfNeeded(page: Page, config: AppConfig): Promise<void
 }
 
 /**
- * Ensures the page showing the timer button is loaded.
- * The "Arbeitsbeginn erfassen" button appears on the Personio dashboard
- * after login, so explicit navigation may not be necessary. If the button
- * isn't visible, we try the attendance URL as a fallback.
+ * Navigates to the attendance page where the timer controls live.
  */
 export async function openTimeTracking(page: Page, config: AppConfig): Promise<void> {
-	console.log('[personio] Checking if timer button is already visible...')
-
-	// The button may already be visible after login/page load
-	try {
-		const startBtn = page.getByRole('button', { name: SELECTORS.startTimerButton })
-		await startBtn.waitFor({ timeout: 5000, state: 'visible' })
-		console.log('[personio] Timer button found on current page.')
-		return
-	} catch {
-		// Not visible — try navigating to attendance page
-	}
-
-	// Also check if timer is already running (stop button visible)
-	try {
-		const stopBtn = page.getByRole('button', { name: SELECTORS.timerRunningIndicator })
-		await stopBtn.waitFor({ timeout: 2000, state: 'visible' })
-		console.log('[personio] Timer already running (stop button visible).')
-		return
-	} catch {
-		// Not visible — navigate to attendance page
+	// Quick check: any timer button already visible?
+	for (const sel of [SELECTORS.startTimerButton, SELECTORS.stopTimerButton, SELECTORS.breakButton, SELECTORS.resumeButton]) {
+		const visible = await page.getByRole('button', { name: sel }).isVisible().catch(() => false)
+		if (visible) {
+			console.log('[personio] Timer controls found on current page.')
+			return
+		}
 	}
 
 	console.log('[personio] Navigating to attendance page...')
 	const attendanceUrl = `${config.personioUrl}/attendance/employee/overview`
 	await page.goto(attendanceUrl, { waitUntil: 'domcontentloaded' })
-	await page.waitForTimeout(3000)
+	await page.waitForTimeout(5000)
 	console.log('[personio] On attendance page.')
-}
-
-/**
- * Checks whether the timer is already running by looking for the
- * "Arbeitsende erfassen" or "Pause" button.
- */
-export async function isTimerAlreadyRunning(page: Page): Promise<boolean> {
-	try {
-		const stopIndicator = page.getByRole('button', { name: SELECTORS.timerRunningIndicator })
-		await stopIndicator.waitFor({ timeout: 3000, state: 'visible' })
-		return true
-	} catch {
-		return false
-	}
-}
-
-/**
- * Clicks the "Arbeitsbeginn erfassen" button to start the timer.
- */
-export async function startTimer(page: Page): Promise<void> {
-	console.log('[personio] Looking for "Arbeitsbeginn erfassen" button...')
-
-	const startBtn = page.getByRole('button', { name: SELECTORS.startTimerButton })
-	await startBtn.waitFor({ timeout: 10000, state: 'visible' })
-	await startBtn.click()
-
-	console.log('[personio] Clicked "Arbeitsbeginn erfassen".')
-	await page.waitForTimeout(3000)
-}
-
-/**
- * Verifies the timer started by checking that the stop/pause button appeared.
- */
-export async function verifyTimerStarted(page: Page): Promise<boolean> {
-	try {
-		const runningIndicator = page.getByRole('button', { name: SELECTORS.timerRunningIndicator })
-		await runningIndicator.waitFor({ timeout: 10000, state: 'visible' })
-		console.log('[personio] Timer verified as running.')
-		return true
-	} catch {
-		console.log('[personio] Could not verify timer started.')
-		return false
-	}
 }
 
 /**
@@ -257,14 +244,15 @@ export async function captureScreenshot(page: Page, config: AppConfig, name: str
 }
 
 /**
- * Runs the full timer-start automation sequence.
- * Returns the result status and any relevant details.
+ * Generic automation runner for all four actions (start, break, resume, stop).
+ * Handles login, navigation, pre-condition check, button click, and verification.
  */
-export async function runTimerAutomation(config: AppConfig): Promise<{
+export async function runAction(config: AppConfig, action: PersonioAction): Promise<{
 	status: TriggerStatus
 	message: string
 	screenshotPath?: string
 }> {
+	const actionDef = getActionDef(action)
 	let context: BrowserContext | null = null
 
 	try {
@@ -277,32 +265,37 @@ export async function runTimerAutomation(config: AppConfig): Promise<{
 		// Step 2: Navigate to time tracking
 		await openTimeTracking(page, config)
 
-		// Step 3: Check if timer is already running
-		if (await isTimerAlreadyRunning(page)) {
-			console.log('[personio] Timer is already running. Nothing to do.')
+		// Step 3: Check if action was already performed
+		if (await actionDef.isAlreadyDone(page)) {
+			console.log(`[personio] Action "${action}" already done. Nothing to do.`)
 			return {
-				status: 'already_started',
-				message: 'Timer is already running.',
+				status: actionDef.alreadyDoneStatus,
+				message: `Action "${action}" was already performed.`,
 			}
 		}
 
-		// Step 4: Start the timer
-		await startTimer(page)
+		// Step 4: Click the button
+		console.log(`[personio] Looking for "${actionDef.buttonSelector}" button...`)
+		const btn = page.getByRole('button', { name: actionDef.buttonSelector })
+		await btn.waitFor({ timeout: 10000, state: 'visible' })
+		await btn.click()
+		console.log(`[personio] Clicked "${actionDef.buttonSelector}".`)
+		await page.waitForTimeout(3000)
 
-		// Step 5: Verify it started
-		const verified = await verifyTimerStarted(page)
+		// Step 5: Verify success
+		const verified = await actionDef.verifySuccess(page)
 		if (!verified) {
-			const screenshotPath = await captureScreenshot(page, config, 'verify-failed')
+			const screenshotPath = await captureScreenshot(page, config, `${action}-verify-failed`)
 			return {
 				status: 'failed',
-				message: 'Timer start could not be verified. Check screenshot.',
+				message: `Action "${action}" could not be verified. Check screenshot.`,
 				screenshotPath,
 			}
 		}
 
 		return {
-			status: 'started',
-			message: 'Timer started successfully.',
+			status: actionDef.successStatus,
+			message: `Action "${action}" completed successfully.`,
 		}
 	} catch (error: unknown) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -313,7 +306,7 @@ export async function runTimerAutomation(config: AppConfig): Promise<{
 			if (context) {
 				const pages = context.pages()
 				if (pages.length > 0) {
-					screenshotPath = await captureScreenshot(pages[0], config, 'error')
+					screenshotPath = await captureScreenshot(pages[0], config, `${action}-error`)
 				}
 			}
 		} catch {
