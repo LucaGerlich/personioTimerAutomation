@@ -2,5 +2,7 @@ node_modules/
 dist/
 storage/
 .env
+macos/config.env
+macos/build/
 *.log
 .DS_Store
