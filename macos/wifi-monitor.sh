@@ -13,7 +13,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${SCRIPT_DIR}/config.env"
-STATE_FILE="${TMPDIR:-/tmp}/personio-wifi-state"
+# Use a fixed path for state — TMPDIR changes per launchd invocation on macOS
+STATE_FILE="${HOME}/.personio-wifi-state"
 LOG_PREFIX="[personio-wifi]"
 
 # Load configuration
@@ -70,17 +71,20 @@ trigger() {
 
 	echo "${LOG_PREFIX} $(date '+%Y-%m-%d %H:%M:%S') Triggering: ${action}"
 
-	local response
 	local http_code
-	response=$(curl -s -w "\n%{http_code}" -X POST \
+	local body
+	body=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
+		-H "Authorization: Bearer ${TRIGGER_TOKEN}" \
+		"$url" 2>&1)
+	http_code="$body"
+
+	# Simpler approach: just log the full response
+	local response
+	response=$(curl -s -X POST \
 		-H "Authorization: Bearer ${TRIGGER_TOKEN}" \
 		"$url" 2>&1)
 
-	http_code=$(echo "$response" | tail -1)
-	local body
-	body=$(echo "$response" | head -n -1)
-
-	echo "${LOG_PREFIX} Response (${http_code}): ${body}"
+	echo "${LOG_PREFIX} Response: ${response}"
 }
 
 # Main logic

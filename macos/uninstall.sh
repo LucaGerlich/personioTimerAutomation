@@ -10,7 +10,7 @@ set -euo pipefail
 APP_NAME="PersonioTimer"
 PLIST_NAME="dev.lucagerlich.personio-timer"
 PLIST_DEST="${HOME}/Library/LaunchAgents/${PLIST_NAME}.plist"
-STATE_FILE="${TMPDIR:-/tmp}/personio-wifi-state"
+STATE_FILE="${HOME}/.personio-wifi-state"
 APP_DEST="${HOME}/Applications/${APP_NAME}.app"
 
 echo "=== Uninstalling ==="
