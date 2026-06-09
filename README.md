@@ -406,6 +406,32 @@ cd macos
 
 Common issues: wrong token in `config.env` (don't include "Bearer " prefix), wrong URL, server not running.
 
+### Wi-Fi monitor triggers stop repeatedly
+
+If the timer keeps stopping on its own, the Wi-Fi monitor may be misfiring. Check the logs:
+
+```bash
+cat ~/Library/Logs/personio-timer.log
+```
+
+If you see repeated `unknown → disconnected` transitions, the state file is not persisting. Verify it exists:
+
+```bash
+cat ~/.personio-wifi-state
+```
+
+If the SSID in the log shows `none` while you're connected, the SSID in `config.env` may not match exactly. Check:
+
+```bash
+# What macOS reports:
+networksetup -getairportnetwork en0
+
+# What's configured:
+grep WORK_SSID macos/config.env
+```
+
+The SSID must match exactly (case-sensitive, including spaces).
+
 ### Container shows "unhealthy"
 
 Check if the Express server is actually running:
