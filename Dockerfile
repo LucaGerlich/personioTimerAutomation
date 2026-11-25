@@ -7,11 +7,10 @@ WORKDIR /app
 # Copy package files first for better Docker layer caching
 COPY package.json package-lock.json ./
 
-# Install production + dev dependencies (tsx is a devDependency we need at runtime)
-RUN npm ci
+# Production dependencies only: Node runs the .ts sources directly (type stripping, Node >= 22.18)
+RUN npm ci --omit=dev
 
 # Copy source code
-COPY tsconfig.json ./
 COPY src/ ./src/
 
 # Create storage directories
@@ -24,5 +23,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 	CMD node -e "fetch('http://localhost:3000/health').then(r => { if (!r.ok) throw new Error(); process.exit(0); }).catch(() => process.exit(1))"
 
-# Start the server
-CMD ["npx", "tsx", "src/server.ts"]
+# Start the server directly with node: one process instead of npm -> sh -> tsx -> node -> esbuild
+CMD ["node", "src/server.ts"]

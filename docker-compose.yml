@@ -3,6 +3,8 @@ services:
     build: .
     container_name: personio-timer
     restart: unless-stopped
+    # tini as PID 1: forwards SIGTERM to node and reaps orphaned Chromium processes
+    init: true
     ports:
       - "${PORT:-3000}:3000"
       # Uncomment for manual login (remote debugging):

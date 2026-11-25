@@ -10,6 +10,8 @@
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
 		"isolatedModules": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
 		"noEmit": true,
 		"outDir": "./dist",
 		"rootDir": "./src",

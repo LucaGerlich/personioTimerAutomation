@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express'
 import { loadConfig } from './config.ts'
 import { canTrigger, recordTrigger, isWeekday, isWithinTimeWindow, isWithinBreakWindow, cooldownRemainingMinutes, getGuardStatus } from './cooldown.ts'
-import { runAction } from './personio.ts'
+import { runActionInChild } from './runner.ts'
 import type { PersonioAction, TriggerResponse, HealthResponse } from './types.ts'
 
 const config = loadConfig()
@@ -121,7 +121,7 @@ function handleTrigger(action: PersonioAction, options: { timeWindow: 'start' | 
 		console.log(`[server] Trigger "${action}" received at ${timestamp}. Starting automation...`)
 
 		try {
-			const result = await runAction(config, action)
+			const result = await runActionInChild(action)
 
 			// Record successful trigger for cooldown tracking
 			if (result.status !== 'failed') {

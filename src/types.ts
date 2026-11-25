@@ -16,6 +16,13 @@ export type TriggerStatus =
 /** The four actions the service can perform */
 export type PersonioAction = 'start' | 'break' | 'resume' | 'stop'
 
+/** Outcome of one automation run (sent from the forked cli.ts back to the server over IPC) */
+export interface ActionResult {
+	status: TriggerStatus
+	message: string
+	screenshotPath?: string
+}
+
 /** Structured response from the /trigger/start endpoint */
 export interface TriggerResponse {
 	status: TriggerStatus

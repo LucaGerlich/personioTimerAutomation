@@ -45,7 +45,16 @@ async function main(): Promise<void> {
 	}
 	console.log('='.repeat(60))
 
-	process.exit(result.status === 'failed' ? 1 : 0)
+	const exitCode = result.status === 'failed' ? 1 : 0
+
+	// Forked by the server (src/runner.ts): hand the result back over IPC.
+	// Exit inside the callback, a plain process.exit() right after send() can drop the message.
+	if (process.send) {
+		process.send(result, () => process.exit(exitCode))
+		return
+	}
+
+	process.exit(exitCode)
 }
 
 main().catch((error: unknown) => {

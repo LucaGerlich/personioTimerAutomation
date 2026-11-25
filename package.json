@@ -4,12 +4,13 @@
 	"description": "Dockerized Playwright automation service to start Personio time-tracking via authenticated HTTP trigger",
 	"type": "module",
 	"scripts": {
-		"start": "tsx src/server.ts",
-		"login": "tsx src/login.ts",
-		"start-timer": "tsx src/cli.ts"
+		"start": "node src/server.ts",
+		"login": "node src/login.ts",
+		"start-timer": "node src/cli.ts",
+		"test": "node --test src/runner.test.ts"
 	},
 	"engines": {
-		"node": ">=20.0.0"
+		"node": ">=22.18.0"
 	},
 	"private": true,
 	"dependencies": {
@@ -20,7 +21,6 @@
 	"devDependencies": {
 		"@types/express": "^5.0.2",
 		"@types/node": "^22.15.17",
-		"tsx": "^4.19.4",
 		"typescript": "^5.8.3"
 	}
 }

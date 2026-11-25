@@ -20,7 +20,7 @@ Automated Personio time-tracking via browser automation. A Dockerized Node.js + 
 1. A trigger event occurs (Wi-Fi connect/disconnect, screen unlock, manual click)
 2. An HTTPS POST request is sent to the API with a bearer token
 3. The server validates auth, checks safety guards (weekend, time window, cooldown, mutex)
-4. Playwright opens a headless Chromium with a persistent login session
+4. The server forks a short-lived child process (`src/cli.ts`) where Playwright opens a headless Chromium with a persistent login session. Playwright is only in memory during a run, so the idle server uses about 40 MB (after a run, `docker stats` also counts Chromium's page cache, which the kernel frees on demand; `grep '^anon ' /sys/fs/cgroup/memory.stat` inside the container shows real usage)
 5. The automation navigates to Personio and clicks the appropriate button
 6. The result is returned as structured JSON
 
@@ -320,9 +320,12 @@ cd macos
 
 ## CLI Commands
 
+Running locally needs Node.js >= 22.18: Node runs the `.ts` sources directly (type stripping), so there is no build step. `npx tsc --noEmit` type-checks.
+
 | Command | Description |
 |---------|-------------|
 | `npm start` | Start the API server |
+| `npm test` | Run the tests |
 | `npm run login` | Interactive login (saves session) |
 | `npm run start-timer` | Test start automation directly |
 | `npm run start-timer break` | Test break automation directly |
@@ -450,12 +453,13 @@ Ensure `PORT` in `.env` matches what Caddy expects (default: 3000).
 personioAutoTimer/
   src/
     server.ts        Express API with /health and /trigger/* endpoints
+    runner.ts        Runs each automation in a forked cli.ts child process
     personio.ts      Playwright automation: login, navigate, click buttons
     cooldown.ts      Per-action cooldown, weekend/time-window guards
     config.ts        Environment variable validation
     types.ts         Shared TypeScript types
     login.ts         Interactive login CLI script
-    cli.ts           Direct automation test CLI
+    cli.ts           Automation CLI (run by hand, or forked by the server per trigger)
   macos/
     PersonioTimer.swift   Native menu bar app (Swift)
     wifi-monitor.sh       Wi-Fi state change monitor (bash)

@@ -1,6 +1,6 @@
 import { chromium, type BrowserContext, type Page } from 'playwright'
 import { mkdirSync } from 'node:fs'
-import type { AppConfig, PersonioAction, TriggerStatus } from './types.ts'
+import type { ActionResult, AppConfig, PersonioAction, TriggerStatus } from './types.ts'
 
 // ============================================================================
 // SELECTOR CONFIGURATION
@@ -247,11 +247,7 @@ export async function captureScreenshot(page: Page, config: AppConfig, name: str
  * Generic automation runner for all four actions (start, break, resume, stop).
  * Handles login, navigation, pre-condition check, button click, and verification.
  */
-export async function runAction(config: AppConfig, action: PersonioAction): Promise<{
-	status: TriggerStatus
-	message: string
-	screenshotPath?: string
-}> {
+export async function runAction(config: AppConfig, action: PersonioAction): Promise<ActionResult> {
 	const actionDef = getActionDef(action)
 	let context: BrowserContext | null = null
 
